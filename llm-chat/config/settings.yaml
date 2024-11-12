@@ -1,0 +1,17 @@
+# config/settings.yaml
+llm:
+  provider: "ollama"
+  model: "llama3.2:3b"
+  temperature: 0.5
+  max_tokens: 2000
+
+chat:
+  history_path: "data/chat_history"
+  save_history: true
+  max_history_length: 100
+
+gui:
+  theme: "dark"
+  width: 800
+  height: 600
+  title: "LLM Chat Interface"
