@@ -1,41 +1,32 @@
 # src/llm/ollama_client.py
 import requests
 import json
-import os
-from typing import Optional
 import logging
+from typing import Optional, Iterator
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class OllamaClient:
     def __init__(self, base_url: str = None):
-        self.base_url = base_url or os.getenv('OLLAMA_HOST', 'http://172.16.12.102:11434')
+        self.base_url = base_url or "http://localhost:11434"
         self.api_endpoint = f"{self.base_url}/api/generate"
-        logger.info(f"Initialized Ollama client with base URL: {self.base_url}")
         
     def generate_response(
         self,
         prompt: str,
-        model: str = "llama3.2:3b",
+        model: str = "llama2",
         temperature: float = 0.7,
         max_tokens: int = 2000
     ) -> Optional[str]:
-        """
-        Generate a response from Ollama model with stream handling.
-        """
+        """Generate a response from Ollama model."""
         try:
             payload = {
                 "model": model,
                 "prompt": prompt,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": False  # Set to False to get a single response
+                "stream": False
             }
-            
-            logger.info(f"Sending request to {self.api_endpoint}")
-            logger.info(f"Payload: {payload}")
             
             response = requests.post(
                 self.api_endpoint,
@@ -43,46 +34,26 @@ class OllamaClient:
                 headers={"Content-Type": "application/json"}
             )
             
-            logger.info(f"Response status code: {response.status_code}")
-            
             if response.status_code != 200:
                 logger.error(f"Error response: {response.text}")
                 return None
-            
-            try:
-                response_data = response.json()
-                return response_data.get("response", "")
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {str(e)}")
-                # Try to extract response from streaming data
-                full_response = ""
-                for line in response.text.strip().split('\n'):
-                    if line.strip():
-                        try:
-                            data = json.loads(line)
-                            if "response" in data:
-                                full_response += data["response"]
-                        except json.JSONDecodeError:
-                            continue
-                return full_response if full_response else None
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed: {str(e)}")
-            return None
+            return response.json().get("response", "")
+            
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
+            logger.error(f"Error generating response: {e}")
             return None
             
     def generate_response_stream(
         self,
         prompt: str,
-        model: str = "llama3.2:3b",
+        model: str = "llama2",
         temperature: float = 0.7,
         max_tokens: int = 2000
-    ):
+    ) -> Iterator[str]:
         """
         Generate a streaming response from Ollama model.
-        Returns a generator that yields response chunks.
+        Returns an iterator that yields response chunks.
         """
         try:
             payload = {
@@ -129,9 +100,8 @@ class OllamaClient:
                 return None
                 
             models = response.json().get("models", [])
-            logger.info(f"Available models: {models}")
             return models
             
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"Error listing models: {e}")
             return None
