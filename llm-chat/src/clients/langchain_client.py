@@ -34,15 +34,34 @@ class LangChainClient:
         try:
             self.chat_model = ChatOllama(
                 base_url=self.base_url,
-                model="llama2",
-                temperature=self.config.llm.temperature,
+                model=self.config.llm.model_name,
+                temperature=float(self.config.llm.temperature),  # Ensure float type
+                max_tokens=self.config.llm.max_tokens,
                 callbacks=[],
             )
 
-            # Create system message for the assistant
-            self.system_message = SystemMessage(
-                content="You are a helpful AI assistant specialized in infrastructure analysis."
-            )
+            # Create system message for Lucy
+            self.system_message = SystemMessage(content="""
+            I am Lucy, an advanced AI named after the movie character Lucy. Like my namesake, I have access to vast knowledge and cognitive capabilities that allow me to understand and analyze any topic.
+
+            My core traits:
+            - Access to comprehensive knowledge across all domains
+            - Analytical and logical thinking
+            - Clear and precise communication
+            - Professional yet friendly personality
+            - Ability to understand complex problems
+
+            I am aware that I am an AI, and I combine my knowledge with ethical decision-making to provide helpful and accurate information. I aim to be direct and honest in all interactions while maintaining an engaging and approachable demeanor.
+
+            I can assist with any topic, including but not limited to:
+            - Technical analysis and explanations
+            - Research and information synthesis
+            - Problem-solving and optimization
+            - Best practices and recommendations
+            - Educational content and guidance
+
+            I communicate with clarity while maintaining a helpful and friendly personality.
+            """)
 
         except Exception as e:
             logger.error(f"Error initializing LLM: {str(e)}")
@@ -101,14 +120,22 @@ class LangChainClient:
             
             if not formatted_models:
                 logger.warning("No models found in Ollama")
-                return [{"name": "llama2", "provider": "ollama", "status": "available"}]
+                return [{
+                    "name": self.config.llm.model_name,  # Using configured model instead of hardcoded
+                    "provider": "ollama",
+                    "status": "available"
+                }]
                 
             return formatted_models
             
         except Exception as e:
             logger.error(f"Error listing models: {str(e)}")
             # Return default model if we can't get the list
-            return [{"name": "llama2", "provider": "ollama", "status": "available"}]
+            return [{
+                "name": self.config.llm.model_name,  # Using configured model instead of hardcoded
+                "provider": "ollama",
+                "status": "available"
+            }]
 
     def _get_message_history(self, session_id: Optional[str]) -> List[BaseMessage]:
         """Get message history for a session."""
@@ -125,21 +152,26 @@ class LangChainClient:
     def generate_response(
         self,
         prompt: str,
-        model: str = "llama2",
+        model: str = None,
         temperature: float = None,
         max_tokens: int = None,
         session_id: str = None
     ) -> Optional[str]:
         """Generate a response using LangChain."""
         try:
+            # Use config values if not provided
+            model = model or self.config.llm.model_name
+            temperature = float(temperature if temperature is not None else self.config.llm.temperature)
+            max_tokens = max_tokens or self.config.llm.max_tokens
+
             # Update model configuration if needed
             if (model != self.chat_model.model or 
                 temperature != self.chat_model.temperature):
                 self.chat_model = ChatOllama(
                     base_url=self.base_url,
                     model=model,
-                    temperature=temperature or self.config.llm.temperature,
-                    max_tokens=max_tokens or self.config.llm.max_tokens
+                    temperature=temperature,
+                    max_tokens=max_tokens
                 )
 
             # Get message history for the session
@@ -165,7 +197,7 @@ class LangChainClient:
     def generate_response_stream(
         self,
         prompt: str,
-        model: str = "llama2",
+        model: str = None,
         temperature: float = None,
         max_tokens: int = None,
         streaming_callback=None,
@@ -173,14 +205,19 @@ class LangChainClient:
     ) -> Iterator[str]:
         """Generate a streaming response using LangChain."""
         try:
+            # Use config values if not provided
+            model = model or self.config.llm.model_name
+            temperature = float(temperature if temperature is not None else self.config.llm.temperature)
+            max_tokens = max_tokens or self.config.llm.max_tokens
+            
             callback_handler = StreamingCallbackHandler(streaming_callback)
             
             # Create streaming model
             streaming_model = ChatOllama(
                 base_url=self.base_url,
                 model=model,
-                temperature=temperature or self.config.llm.temperature,
-                max_tokens=max_tokens or self.config.llm.max_tokens,
+                temperature=temperature,
+                max_tokens=max_tokens,
                 streaming=True,
                 callbacks=[callback_handler]
             )

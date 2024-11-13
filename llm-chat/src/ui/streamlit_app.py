@@ -24,7 +24,26 @@ class StreamlitApp:
         self.chat_history = chat_history
 
     def run(self):
-        st.title("LLM Chat Interface")
+        st.title("Lucy - AI Infrastructure Analyzer 🤖")
+        
+        # Add welcome message
+        if "welcomed" not in st.session_state:
+            st.markdown("""
+            ### Welcome! I'm Lucy 👋
+            
+            I'm an advanced AI infrastructure analyst inspired by the movie 'Lucy'. Like my namesake, 
+            I possess enhanced analytical capabilities focused on understanding and optimizing cloud infrastructure.
+            
+            I can help you with:
+            - Analyzing infrastructure configurations
+            - Providing security recommendations
+            - Optimizing costs
+            - Improving performance
+            - Ensuring compliance
+            
+            Feel free to ask me anything about your infrastructure!
+            """)
+            st.session_state.welcomed = True
 
         # Initialize session state
         self._initialize_session_state()
@@ -78,7 +97,7 @@ class StreamlitApp:
 
     def _handle_user_input(self, model: str, temperature: float, use_streaming: bool):
         """Handle user input and generate response."""
-        if prompt := st.chat_input("Send a message..."):
+        if prompt := st.chat_input("How can I assist you with your infrastructure today?"):
             # Add user message to UI
             with st.chat_message("user"):
                 st.write(prompt)
@@ -148,7 +167,7 @@ class StreamlitApp:
     ) -> Optional[str]:
         """Handle standard (non-streaming) response generation."""
         try:
-            with st.spinner("Generating response..."):
+            with st.spinner("Analyzing your request..."):
                 response = self.llm_client.generate_response(
                     prompt=prompt,
                     model=model,
@@ -159,7 +178,7 @@ class StreamlitApp:
                     st.write(response)
                     return response
                 else:
-                    st.error("Failed to get response")
+                    st.error("Failed to generate response")
                     return None
 
         except Exception as e:

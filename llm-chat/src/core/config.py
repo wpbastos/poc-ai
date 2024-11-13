@@ -1,17 +1,20 @@
 # src/core/config.py
 from pathlib import Path
 from typing import Dict, Any
-import yaml
 from dataclasses import dataclass
 import os
+import logging
 from dotenv import load_dotenv
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 @dataclass
 class LLMConfig:
     host: str
     temperature: float
     max_tokens: int
-    model_name: str = "llama2"
+    model_name: str
 
 @dataclass
 class RedisConfig:
@@ -28,32 +31,36 @@ class AppConfig:
     debug: bool
 
 class ConfigManager:
-    def __init__(self, config_path: str = None):
+    def __init__(self):
         """Initialize configuration manager."""
+        # Load environment variables
         load_dotenv()
-        self.config_path = config_path or "config/config.yaml"
         self.config = self._load_config()
 
     def _load_config(self) -> AppConfig:
-        """Load configuration from YAML file and environment variables."""
-        with open(self.config_path, 'r') as f:
-            config_data = yaml.safe_load(f)
+        """Load configuration from environment variables."""
+        # Get temperature with proper type conversion and error handling
+        try:
+            temperature = float(os.getenv('OLLAMA_TEMPERATURE', '0.5'))
+        except ValueError:
+            logger.warning("Invalid OLLAMA_TEMPERATURE value, using default 0.5")
+            temperature = 0.5
 
         return AppConfig(
             llm=LLMConfig(
-                host=os.getenv('OLLAMA_HOST', config_data['llm']['host']),
-                temperature=float(config_data['llm']['temperature']),
-                max_tokens=int(config_data['llm']['max_tokens']),
-                model_name=config_data['llm'].get('model_name', 'llama2')
+                host=os.getenv('OLLAMA_HOST', 'http://localhost:11434'),
+                model_name=os.getenv('OLLAMA_MODEL', 'llama2:3b'),
+                temperature=temperature,
+                max_tokens=int(os.getenv('OLLAMA_MAX_TOKENS', '2048'))
             ),
             redis=RedisConfig(
-                host=os.getenv('REDIS_HOST', config_data['redis']['host']),
-                port=int(os.getenv('REDIS_PORT', config_data['redis']['port'])),
-                db=int(config_data['redis']['db']),
-                max_retries=int(config_data['redis']['max_retries']),
-                retry_interval=int(config_data['redis']['retry_interval'])
+                host=os.getenv('REDIS_HOST', 'localhost'),
+                port=int(os.getenv('REDIS_PORT', '6379')),
+                db=int(os.getenv('REDIS_DB', '0')),
+                max_retries=int(os.getenv('REDIS_MAX_RETRIES', '3')),
+                retry_interval=int(os.getenv('REDIS_RETRY_INTERVAL', '1'))
             ),
-            debug=bool(config_data.get('debug', False))
+            debug=os.getenv('DEBUG', 'false').lower() == 'true'
         )
 
     def get_config(self) -> AppConfig:

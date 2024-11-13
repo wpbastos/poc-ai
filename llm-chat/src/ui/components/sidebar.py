@@ -12,6 +12,7 @@ class Sidebar:
     def __init__(self, llm_client: LangChainClient, chat_history: BaseChatHistory):
         self.llm_client = llm_client
         self.chat_history = chat_history
+        self.config = llm_client.config
 
     def render(self) -> Tuple[str, float, bool]:
         """Render the sidebar components."""
@@ -55,15 +56,19 @@ class Sidebar:
             models = self.llm_client.list_models()
             model_names = [model["name"] for model in models]
             
+            # Use configured model as default selection
+            default_index = model_names.index(self.config.llm.model_name) if self.config.llm.model_name in model_names else 0
+            
             return st.selectbox(
                 "Select Model",
                 options=model_names,
+                index=default_index,
                 help="Choose the AI model to use for responses"
             )
         except Exception as e:
             logger.error(f"Error rendering model selection: {str(e)}")
             st.error("Failed to load models")
-            return "llama2"
+            return self.config.llm.model_name
 
     def _render_temperature_control(self) -> float:
         """Render temperature slider control."""
@@ -71,7 +76,7 @@ class Sidebar:
             "Temperature",
             min_value=0.0,
             max_value=1.0,
-            value=0.7,
+            value=self.config.llm.temperature,  # Use configured temperature
             step=0.1,
             help="Higher values make the output more random, lower values make it more focused"
         )
