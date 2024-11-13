@@ -1,12 +1,14 @@
 # src/ui/components/chat.py
 import streamlit as st
-from typing import Optional, Callable
-from src.clients.base import BaseLLMClient, BaseChatHistory
+from typing import List
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from src.clients.langchain_client import LangChainClient
+from src.clients.base import BaseChatHistory
 
 class ChatComponent:
     def __init__(
         self,
-        llm_client: BaseLLMClient,
+        llm_client: LangChainClient,
         chat_history: BaseChatHistory,
         session_id: str
     ):
@@ -16,7 +18,7 @@ class ChatComponent:
 
     def render(
         self,
-        messages: list,
+        messages: List[BaseMessage],
         model: str,
         temperature: float,
         use_streaming: bool
@@ -24,8 +26,9 @@ class ChatComponent:
         """Render the chat interface."""
         # Display messages
         for message in messages:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
+            role = "user" if isinstance(message, HumanMessage) else "assistant"
+            with st.chat_message(role):
+                st.write(message.content)
 
         # Chat input
         if prompt := st.chat_input("Send a message..."):
@@ -49,7 +52,8 @@ class ChatComponent:
             st.write(prompt)
 
         # Save user message
-        self.chat_history.add_message(self.session_id, "user", prompt)
+        user_message = HumanMessage(content=prompt)
+        self.chat_history.add_message(self.session_id, user_message)
 
         # Generate and display assistant response
         with st.chat_message("assistant"):
@@ -65,25 +69,25 @@ class ChatComponent:
         temperature: float
     ) -> None:
         """Handle streaming response generation."""
-        full_response = ""
         message_placeholder = st.empty()
+        full_response = []
 
-        for response_chunk in self.llm_client.generate_response_stream(
+        def handle_token(token: str):
+            full_response.append(token)
+            message_placeholder.markdown("".join(full_response) + "▌")
+
+        response = self.llm_client.generate_response_stream(
             prompt=prompt,
             model=model,
-            temperature=temperature
-        ):
-            if response_chunk:
-                full_response += response_chunk
-                message_placeholder.markdown(full_response + "▌")
+            temperature=temperature,
+            streaming_callback=handle_token
+        )
 
-        if full_response:
-            message_placeholder.markdown(full_response)
-            self.chat_history.add_message(
-                self.session_id,
-                "assistant",
-                full_response
-            )
+        if response:
+            final_response = "".join(full_response)
+            message_placeholder.markdown(final_response)
+            ai_message = AIMessage(content=final_response)
+            self.chat_history.add_message(self.session_id, ai_message)
         else:
             st.error("Failed to get streaming response")
 
@@ -103,10 +107,7 @@ class ChatComponent:
 
             if response:
                 st.write(response)
-                self.chat_history.add_message(
-                    self.session_id,
-                    "assistant",
-                    response
-                )
+                ai_message = AIMessage(content=response)
+                self.chat_history.add_message(self.session_id, ai_message)
             else:
                 st.error("Failed to get response")

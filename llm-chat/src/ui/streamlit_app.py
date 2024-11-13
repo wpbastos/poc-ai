@@ -4,13 +4,14 @@ from datetime import datetime
 from src.ui.components.sidebar import Sidebar
 from src.ui.components.chat import ChatComponent
 from src.core.config import AppConfig
-from src.clients.base import BaseLLMClient, BaseChatHistory
+from src.clients.langchain_client import LangChainClient
+from src.clients.base import BaseChatHistory
 
 class StreamlitApp:
     def __init__(
         self,
         config: AppConfig,
-        llm_client: BaseLLMClient,
+        llm_client: LangChainClient,
         chat_history: BaseChatHistory
     ):
         self.config = config
