@@ -1,5 +1,6 @@
 # src/clients/langchain_client.py
-from typing import Optional, Iterator, List, Dict
+
+from typing import Optional, Iterator, List, Dict, Tuple
 import logging
 import requests
 from datetime import datetime
@@ -27,6 +28,7 @@ class LangChainClient:
         self.llm = None
         self.chat_model = None
         self._message_histories = {}  # Store message histories by session
+        self.full_prompt = None  # Store the full prompt
         self._initialize_llm()
 
     def _initialize_llm(self):
@@ -35,7 +37,7 @@ class LangChainClient:
             self.chat_model = ChatOllama(
                 base_url=self.base_url,
                 model=self.config.llm.model_name,
-                temperature=float(self.config.llm.temperature),  # Ensure float type
+                temperature=float(self.config.llm.temperature),
                 max_tokens=self.config.llm.max_tokens,
                 callbacks=[],
             )
@@ -67,6 +69,14 @@ class LangChainClient:
             logger.error(f"Error initializing LLM: {str(e)}")
             raise ClientConnectionError(f"Failed to initialize LLM: {str(e)}")
 
+    def _format_messages_for_display(self, messages: List[BaseMessage]) -> str:
+        """Format all messages in a readable way for display."""
+        formatted_messages = []
+        for msg in messages:
+            msg_type = msg.__class__.__name__.replace('Message', '')
+            formatted_messages.append(f"[{msg_type}]:\n{msg.content}\n")
+        return "\n".join(formatted_messages)
+
     def _make_request(self, endpoint: str, method: str = "GET", json_data: Dict = None) -> requests.Response:
         """Make HTTP request to Ollama API with error handling."""
         try:
@@ -95,6 +105,18 @@ class LangChainClient:
             logger.error(f"Request error: {str(e)}")
             raise ModelError(f"Error making request to Ollama API: {str(e)}")
 
+    def _get_message_history(self, session_id: Optional[str]) -> List[BaseMessage]:
+        """Get message history for a session."""
+        if not session_id:
+            return []
+        return self._message_histories.get(session_id, [])
+
+    def _add_to_message_history(self, session_id: str, message: BaseMessage) -> None:
+        """Add a message to the session history."""
+        if session_id not in self._message_histories:
+            self._message_histories[session_id] = []
+        self._message_histories[session_id].append(message)
+
     def list_models(self) -> List[Dict]:
         """List available models from Ollama."""
         try:
@@ -121,7 +143,7 @@ class LangChainClient:
             if not formatted_models:
                 logger.warning("No models found in Ollama")
                 return [{
-                    "name": self.config.llm.model_name,  # Using configured model instead of hardcoded
+                    "name": self.config.llm.model_name,
                     "provider": "ollama",
                     "status": "available"
                 }]
@@ -130,24 +152,11 @@ class LangChainClient:
             
         except Exception as e:
             logger.error(f"Error listing models: {str(e)}")
-            # Return default model if we can't get the list
             return [{
-                "name": self.config.llm.model_name,  # Using configured model instead of hardcoded
+                "name": self.config.llm.model_name,
                 "provider": "ollama",
                 "status": "available"
             }]
-
-    def _get_message_history(self, session_id: Optional[str]) -> List[BaseMessage]:
-        """Get message history for a session."""
-        if not session_id:
-            return []
-        return self._message_histories.get(session_id, [])
-
-    def _add_to_message_history(self, session_id: str, message: BaseMessage) -> None:
-        """Add a message to the session history."""
-        if session_id not in self._message_histories:
-            self._message_histories[session_id] = []
-        self._message_histories[session_id].append(message)
 
     def generate_response(
         self,
@@ -156,7 +165,7 @@ class LangChainClient:
         temperature: float = None,
         max_tokens: int = None,
         session_id: str = None
-    ) -> Optional[str]:
+    ) -> Tuple[Optional[str], str]:
         """Generate a response using LangChain."""
         try:
             # Use config values if not provided
@@ -179,6 +188,9 @@ class LangChainClient:
             
             # Create messages list with system message and history
             messages = [self.system_message] + history + [HumanMessage(content=prompt)]
+            
+            # Store the full prompt for display
+            self.full_prompt = self._format_messages_for_display(messages)
 
             # Generate response
             response = self.chat_model.invoke(messages)
@@ -188,7 +200,7 @@ class LangChainClient:
                 self._add_to_message_history(session_id, HumanMessage(content=prompt))
                 self._add_to_message_history(session_id, response)
                 
-            return response.content
+            return response.content, self.full_prompt
 
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
@@ -202,7 +214,7 @@ class LangChainClient:
         max_tokens: int = None,
         streaming_callback=None,
         session_id: str = None
-    ) -> Iterator[str]:
+    ) -> Tuple[str, str]:
         """Generate a streaming response using LangChain."""
         try:
             # Use config values if not provided
@@ -227,6 +239,9 @@ class LangChainClient:
             
             # Create messages list with system message and history
             messages = [self.system_message] + history + [HumanMessage(content=prompt)]
+            
+            # Store the full prompt for display
+            self.full_prompt = self._format_messages_for_display(messages)
 
             # Generate streaming response
             response = streaming_model.invoke(messages)
@@ -236,8 +251,54 @@ class LangChainClient:
                 self._add_to_message_history(session_id, HumanMessage(content=prompt))
                 self._add_to_message_history(session_id, response)
             
-            return response.content
+            return response.content, self.full_prompt
 
         except Exception as e:
             logger.error(f"Stream error: {str(e)}")
             raise ModelError(f"Streaming error: {str(e)}")
+
+    def generate_chat_name(self, prompt: str, response: str) -> str:
+        """
+        Generate a descriptive chat name based on the initial conversation.
+        
+        Args:
+            prompt: Initial user prompt
+            response: AI's first response
+            
+        Returns:
+            A 4-5 word descriptive name for the chat
+        """
+        try:
+            naming_prompt = """
+            Based on the following conversation, create a concise 4-5 word title that captures the main topic or purpose. Make it clear and descriptive.
+            Initial user message:
+            {prompt}
+            Your response:
+            {response}
+            Generate only the title, nothing else.
+            """
+
+            formatted_prompt = naming_prompt.format(
+                prompt=prompt.strip(), 
+                response=response.strip()
+            )
+            
+            # Generate chat name using the same model settings but higher temperature
+            chat_name, _ = self.generate_response(
+                prompt=formatted_prompt,
+                temperature=0.7  # Slightly higher temperature for creative titles
+            )
+            
+            # Clean and validate the chat name
+            if chat_name and chat_name.strip():
+                chat_name = chat_name.strip().replace("\n", " ")
+                # Ensure reasonable length
+                if len(chat_name) > 50:
+                    chat_name = chat_name[:47] + "..."
+                return chat_name
+            
+            return f"Infrastructure Analysis {datetime.now().strftime('%Y%m%d_%H%M')}"
+            
+        except Exception as e:
+            logger.error(f"Error generating chat name: {str(e)}")
+            return f"Infrastructure Analysis {datetime.now().strftime('%Y%m%d_%H%M')}"
